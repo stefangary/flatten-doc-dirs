@@ -13,7 +13,10 @@ output_dir=$2;
 # Note - this is just a prelimary sketch
 # and this line will NOT work if there are
 # symbolic links or directories with the
-# ":" symbol in their names.
+# ":" symbol in their names.  Also, need
+# to set IFS to just new lines to avoid
+# breaking up directories.
+IFS=$'\n'
 dir_list=`ls --ignore-backups -1 --recursive -l $input_dir | grep $input_dir | awk -F: '{print $1}'`
 
 # Set up output directory
@@ -24,7 +27,9 @@ else
 fi
 
 # Set list of extensions
-ext_list='doc dot docx odt'
+# Must use newlines to separate strings
+# since I set IFS to newline, above.
+ext_list="doc"$'\n'"dot"$'\n'"docx"$'\n'"odt"$'\n'"pages"
 
 # Start a file counter so we don't overwrite
 file_count=10000
@@ -34,20 +39,33 @@ for dir in $dir_list
 do
     echo Working on $dir
     cd $dir
+
+    # Delete quarantine files
+    rm -f _*.*
+
+    # Delete OSX Desktop Services Store files.
+    rm -f *DS_Store
     
     for ext in $ext_list
     do
 	# Convert to pdf
-	soffice --convert-to pdf *.${ext}
+	soffice --convert-to pdf *.${ext}	
     done
-    
+
+    # LaTeX, used below does not like spaces
+    # in file names.  So, while looping over
+    # all the pdfs, make a temporary file for
+    # input to LaTex that has no funny chars.
+
     # Then, put a header on all pdfs that reflects
     # the original file name as well as the
     # original directory
-    pdf_list=`ls -1 *.pdf`
-
+    pdf_list=$(ls -1 *.pdf) 
     for pdf in $pdf_list
     do
+	# Link to temporary pdf without any funny characters.
+	cp $pdf ./tmp.pdf
+	
 pdflatex <<EOF
 \documentclass{article}
 \usepackage[final]{pdfpages} %needed for \includepdf, below
@@ -65,13 +83,14 @@ pdflatex <<EOF
 \cfoot{}
 \begin{document}
 \includepdfset{pagecommand=\thispagestyle{fancy}} %force all pages to be treated the same
-\includepdf[pages=-]{$pdf} %include all the pages of the input file
+\includepdf[pages=-]{tmp.pdf} %include all the pages of the input file
 \end{document}
 
 EOF
 
         # Clean up
         rm -f *.aux *.log
+        rm -f tmp.pdf
 	let file_count++
 	mv -f texput.pdf $output_dir/${file_count}.pdf
     done
